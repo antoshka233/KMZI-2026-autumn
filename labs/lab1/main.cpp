@@ -1,48 +1,38 @@
-
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
-#include <array>
-#include <vector>
-#include <algorithm>
-
 
 class GaloisField {
 public:
     explicit GaloisField(uint16_t p_x)
         : p_byte_(uint8_t(p_x & 0xFF)) {
-        if ((p_x & 0x100) == 0)
-            std::printf("Warning: p(x) degree != 8\n");
         buildSbox();
     }
 
     static uint8_t add(uint8_t a, uint8_t b) { return uint8_t(a ^ b); }
 
-  
     uint8_t mul(uint8_t a, uint8_t b) const {
         uint8_t res = 0;
-        uint8_t aa = a;
-        uint8_t bb = b;
+        uint8_t aa  = a;
+        uint8_t bb  = b;
         for (int i = 0; i < 8; ++i) {
-            uint8_t mask = uint8_t(-(int8_t)(bb & 1));
+            uint8_t mask = uint8_t(-(int)(bb & 1));
             res ^= uint8_t(aa & mask);
             uint8_t hi = uint8_t(aa >> 7);
             aa = uint8_t(aa << 1);
-            aa ^= uint8_t((-(int8_t)hi) & p_byte_);
+            aa ^= uint8_t((-(int)hi) & p_byte_);
             bb >>= 1;
         }
         return res;
     }
 
-    
     uint8_t inv(uint8_t a) const {
-        if (a == 0) return 0;
-        uint8_t x2 = mul(a, a);
-        uint8_t x4 = mul(x2, x2);
-        uint8_t x8 = mul(x4, x4);
-        uint8_t x16 = mul(x8, x8);
-        uint8_t x32 = mul(x16, x16);
-        uint8_t x64 = mul(x32, x32);
+        uint8_t x2   = mul(a, a);
+        uint8_t x4   = mul(x2, x2);
+        uint8_t x8   = mul(x4, x4);
+        uint8_t x16  = mul(x8, x8);
+        uint8_t x32  = mul(x16, x16);
+        uint8_t x64  = mul(x32, x32);
         uint8_t x128 = mul(x64, x64);
         uint8_t r = x128;
         r = mul(r, x64);
@@ -56,25 +46,24 @@ public:
 
     static uint8_t affineAES(uint8_t b) {
         uint8_t x = b;
-        auto rotl8 = [](uint8_t v, int n) {
-            return uint8_t((v << n) | (v >> (8 - n)));
-            };
-        uint8_t y = uint8_t(x ^ rotl8(x, 1) ^ rotl8(x, 2) ^ rotl8(x, 3) ^ rotl8(x, 4));
+        uint8_t y = uint8_t(x ^ ((x << 1) | (x >> 7))
+                              ^ ((x << 2) | (x >> 6))
+                              ^ ((x << 3) | (x >> 5))
+                              ^ ((x << 4) | (x >> 4)));
         return uint8_t(y ^ 0x63);
     }
 
-    const std::array<uint8_t, 256>& sbox() const { return sbox_; }
+    const uint8_t* sbox() const { return sbox_; }
 
 private:
     uint8_t p_byte_;
-    std::array<uint8_t, 256> sbox_{};
+    uint8_t sbox_[256];
 
     void buildSbox() {
         for (int i = 0; i < 256; ++i)
             sbox_[i] = affineAES(inv(uint8_t(i)));
     }
 };
-
 
 static const uint8_t BELT_H[256] = {
     0xB1,0x94,0xBA,0xC8,0x0A,0x08,0xF5,0x3B,0x36,0x6D,0x00,0x8E,0x58,0x4A,0x5D,0xE4,
@@ -101,7 +90,7 @@ public:
 
     explicit Belt(const uint8_t key[32]) {
         for (int i = 0; i < 8; ++i)
-            K_[i] = loadBE32(key + 4 * i);
+            K_[i] = loadBE32(key + 4*i);
     }
 
     void encryptBlock(const uint8_t in[16], uint8_t out[16]) const {
@@ -111,19 +100,19 @@ public:
         uint32_t d = loadBE32(in + 12);
 
         for (int r = 1; r <= ROUNDS; ++r) {
-            uint32_t k0 = K_[(7 * r - 7) & 7];
-            uint32_t k1 = K_[(7 * r - 6) & 7];
-            uint32_t k2 = K_[(7 * r - 5) & 7];
-            uint32_t k3 = K_[(7 * r - 4) & 7];
-            uint32_t k4 = K_[(7 * r - 3) & 7];
-            uint32_t k5 = K_[(7 * r - 2) & 7];
-            uint32_t k6 = K_[(7 * r - 1) & 7];
+            uint32_t k0 = K_[(7*r - 7) & 7];
+            uint32_t k1 = K_[(7*r - 6) & 7];
+            uint32_t k2 = K_[(7*r - 5) & 7];
+            uint32_t k3 = K_[(7*r - 4) & 7];
+            uint32_t k4 = K_[(7*r - 3) & 7];
+            uint32_t k5 = K_[(7*r - 2) & 7];
+            uint32_t k6 = K_[(7*r - 1) & 7];
 
-            b ^= G5(a + k0);
+            b ^= G5 (a + k0);
             c ^= G21(d + k1);
             a -= G13(b + k2);
             d += G21(c + k3) ^ uint32_t(r);
-            c ^= G5(b + k4);
+            c ^= G5 (b + k4);
             a ^= G13(d + k5);
             b -= G21(c + k6);
         }
@@ -140,21 +129,21 @@ public:
         uint32_t d = loadBE32(in + 12);
 
         for (int r = ROUNDS; r >= 1; --r) {
-            uint32_t k0 = K_[(7 * r - 7) & 7];
-            uint32_t k1 = K_[(7 * r - 6) & 7];
-            uint32_t k2 = K_[(7 * r - 5) & 7];
-            uint32_t k3 = K_[(7 * r - 4) & 7];
-            uint32_t k4 = K_[(7 * r - 3) & 7];
-            uint32_t k5 = K_[(7 * r - 2) & 7];
-            uint32_t k6 = K_[(7 * r - 1) & 7];
+            uint32_t k0 = K_[(7*r - 7) & 7];
+            uint32_t k1 = K_[(7*r - 6) & 7];
+            uint32_t k2 = K_[(7*r - 5) & 7];
+            uint32_t k3 = K_[(7*r - 4) & 7];
+            uint32_t k4 = K_[(7*r - 3) & 7];
+            uint32_t k5 = K_[(7*r - 2) & 7];
+            uint32_t k6 = K_[(7*r - 1) & 7];
 
             b += G21(c + k6);
             a ^= G13(d + k5);
-            c ^= G5(b + k4);
+            c ^= G5 (b + k4);
             d -= G21(c + k3) ^ uint32_t(r);
             a += G13(b + k2);
             c ^= G21(d + k1);
-            b ^= G5(a + k0);
+            b ^= G5 (a + k0);
         }
         storeBE32(a, out + 0);
         storeBE32(b, out + 4);
@@ -167,7 +156,7 @@ private:
 
     static uint32_t loadBE32(const uint8_t* p) {
         return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16)
-            | (uint32_t(p[2]) << 8) | uint32_t(p[3]);
+             | (uint32_t(p[2]) << 8)  |  uint32_t(p[3]);
     }
     static void storeBE32(uint32_t v, uint8_t* p) {
         p[0] = uint8_t(v >> 24); p[1] = uint8_t(v >> 16);
@@ -178,104 +167,110 @@ private:
 
     static uint32_t S(uint32_t x) {
         return (uint32_t(subByte(uint8_t(x >> 24))) << 24)
-            | (uint32_t(subByte(uint8_t(x >> 16))) << 16)
-            | (uint32_t(subByte(uint8_t(x >> 8))) << 8)
-            | uint32_t(subByte(uint8_t(x)));
+             | (uint32_t(subByte(uint8_t(x >> 16))) << 16)
+             | (uint32_t(subByte(uint8_t(x >>  8))) <<  8)
+             |  uint32_t(subByte(uint8_t(x)));
     }
     static uint32_t rotl32(uint32_t x, int n) {
         return (x << n) | (x >> (32 - n));
     }
-    static uint32_t G5(uint32_t x) { return rotl32(S(x), 5); }
+    static uint32_t G5 (uint32_t x) { return rotl32(S(x),  5); }
     static uint32_t G13(uint32_t x) { return rotl32(S(x), 13); }
     static uint32_t G21(uint32_t x) { return rotl32(S(x), 21); }
 };
 
-
 template <class Cipher>
 class GCM {
 public:
+    static constexpr size_t MAX_BUF = 8192;
+
     GCM(const Cipher& c) : cipher_(c) {
-        uint8_t zero[16] = { 0 };
+        uint8_t zero[16] = {0};
         cipher_.encryptBlock(zero, H_);
     }
 
-    void seal(const std::vector<uint8_t>& aad,
-        const std::vector<uint8_t>& pt,
-        const std::vector<uint8_t>& iv,
-        std::vector<uint8_t>& out_ct,
-        uint8_t out_tag[16]) const
+    void seal(const uint8_t* aad, size_t aad_len,
+              const uint8_t* pt,  size_t pt_len,
+              const uint8_t* iv,  size_t iv_len,
+              uint8_t* out_ct,
+              uint8_t out_tag[16]) const
     {
-       
         uint8_t J0[16];
-        if (iv.size() == 12) {
-            std::memcpy(J0, iv.data(), 12);
+
+        if (iv_len == 12) {
+            std::memcpy(J0, iv, 12);
             J0[12] = 0; J0[13] = 0; J0[14] = 0; J0[15] = 1;
-        }
-        else {
-            
-            std::vector<uint8_t> ivPadded;
-            if (!iv.empty()) {
-                size_t pad = (16 - (iv.size() % 16)) % 16;
-                ivPadded.assign(iv.begin(), iv.end());
-                ivPadded.insert(ivPadded.end(), pad, 0);
+        } else {
+            uint8_t buf[MAX_BUF];
+            size_t  pos = 0;
+
+            if (iv_len > 0) {
+                std::memcpy(buf + pos, iv, iv_len);
+                pos += iv_len;
+                size_t pad = (16 - (iv_len % 16)) % 16;
+                std::memset(buf + pos, 0, pad);
+                pos += pad;
             }
-            uint8_t lenBlock[16] = { 0 };
-            storeBE64(uint64_t(iv.size()) * 8, lenBlock + 8);
 
-            std::vector<uint8_t> buf;
-            buf.insert(buf.end(), ivPadded.begin(), ivPadded.end());
-            buf.insert(buf.end(), lenBlock, lenBlock + 16);
-            ghash(buf.data(), buf.size(), J0);
+            uint8_t lenBlock[16] = {0};
+            storeBE64(uint64_t(iv_len) * 8, lenBlock + 8);
+            std::memcpy(buf + pos, lenBlock, 16);
+            pos += 16;
+
+            ghash(buf, pos, J0);
         }
 
-        
-        out_ct.assign(pt.size(), 0);
         uint8_t counter[16];
         std::memcpy(counter, J0, 16);
+
         size_t off = 0;
-        while (off < pt.size()) {
+        while (off < pt_len) {
             inc32(counter);
             uint8_t ks[16];
             cipher_.encryptBlock(counter, ks);
-            size_t n = std::min<size_t>(16, pt.size() - off);
+            size_t n = 16;
+            if (pt_len - off < 16) n = pt_len - off;
             for (size_t i = 0; i < n; ++i)
                 out_ct[off + i] = uint8_t(pt[off + i] ^ ks[i]);
             off += n;
         }
 
-        
         uint8_t S[16];
         {
-            std::vector<uint8_t> buf;
-           
-            if (!aad.empty()) {
-                buf.insert(buf.end(), aad.begin(), aad.end());
-                size_t pad = (16 - (aad.size() % 16)) % 16;
-                buf.insert(buf.end(), pad, 0);
-            }
-            
-            if (!out_ct.empty()) {
-                buf.insert(buf.end(), out_ct.begin(), out_ct.end());
-                size_t pad = (16 - (out_ct.size() % 16)) % 16;
-                buf.insert(buf.end(), pad, 0);
-            }
-           
-            uint8_t lenBlock[16];
-            storeBE64(uint64_t(aad.size()) * 8, lenBlock);
-            storeBE64(uint64_t(out_ct.size()) * 8, lenBlock + 8);
-            buf.insert(buf.end(), lenBlock, lenBlock + 16);
+            uint8_t buf[MAX_BUF];
+            size_t  pos = 0;
 
-            ghash(buf.data(), buf.size(), S);
+            if (aad_len > 0) {
+                std::memcpy(buf + pos, aad, aad_len);
+                pos += aad_len;
+                size_t pad = (16 - (aad_len % 16)) % 16;
+                std::memset(buf + pos, 0, pad);
+                pos += pad;
+            }
+
+            if (pt_len > 0) {
+                std::memcpy(buf + pos, out_ct, pt_len);
+                pos += pt_len;
+                size_t pad = (16 - (pt_len % 16)) % 16;
+                std::memset(buf + pos, 0, pad);
+                pos += pad;
+            }
+
+            uint8_t lenBlock[16];
+            storeBE64(uint64_t(aad_len) * 8, lenBlock);
+            storeBE64(uint64_t(pt_len)  * 8, lenBlock + 8);
+            std::memcpy(buf + pos, lenBlock, 16);
+            pos += 16;
+
+            ghash(buf, pos, S);
         }
 
-       
         uint8_t ej0[16];
         cipher_.encryptBlock(J0, ej0);
         for (int i = 0; i < 16; ++i)
             out_tag[i] = uint8_t(S[i] ^ ej0[i]);
     }
 
-   
     static bool verifyTagCT(const uint8_t computed[16], const uint8_t received[16]) {
         uint8_t acc = 0;
         for (int i = 0; i < 16; ++i)
@@ -289,7 +284,7 @@ private:
 
     static void storeBE64(uint64_t v, uint8_t* p) {
         for (int i = 0; i < 8; ++i)
-            p[i] = uint8_t(v >> (56 - 8 * i));
+            p[i] = uint8_t(v >> (56 - 8*i));
     }
 
     static void inc32(uint8_t c[16]) {
@@ -298,14 +293,13 @@ private:
         }
     }
 
-    
     static void gf128Mul(const uint8_t X[16], const uint8_t V[16], uint8_t Z[16]) {
-        uint8_t z[16] = { 0 };
+        uint8_t z[16] = {0};
         uint8_t v[16];
         std::memcpy(v, V, 16);
         for (int i = 0; i < 128; ++i) {
-            uint8_t bit = uint8_t((X[i >> 3] >> (7 - (i & 7))) & 1);
-            uint8_t mask = uint8_t(-(int8_t)bit);
+            uint8_t bit  = uint8_t((X[i >> 3] >> (7 - (i & 7))) & 1);
+            uint8_t mask = uint8_t(-(int)bit);
             for (int j = 0; j < 16; ++j)
                 z[j] ^= uint8_t(v[j] & mask);
 
@@ -316,14 +310,13 @@ private:
                 v[j] = uint8_t((v[j] >> 1) | (carry << 7));
                 carry = nc;
             }
-            v[0] ^= uint8_t(0xE1 & uint8_t(-(int8_t)lsb));
+            v[0] ^= uint8_t(0xE1 & uint8_t(-(int)lsb));
         }
         std::memcpy(Z, z, 16);
     }
 
-    
     void ghash(const uint8_t* data, size_t len, uint8_t out[16]) const {
-        uint8_t Y[16] = { 0 };
+        uint8_t Y[16] = {0};
         for (size_t off = 0; off < len; off += 16) {
             for (int i = 0; i < 16; ++i)
                 Y[i] ^= data[off + i];
@@ -335,7 +328,6 @@ private:
     }
 };
 
-
 static void printHex(const char* label, const uint8_t* p, size_t n) {
     std::printf("%s", label);
     for (size_t i = 0; i < n; ++i) std::printf("%02X", p[i]);
@@ -343,24 +335,22 @@ static void printHex(const char* label, const uint8_t* p, size_t n) {
 }
 
 int main() {
-    std::printf("=== Лабораторная работа №1. Вариант 6 ===\n\n");
+    std::printf("=== Laboratornaya 1. Variant 6 ===\n\n");
 
-    
-    std::printf("--- Модуль 1: Galois Field GF(2^8), p(x)=0x169 ---\n");
+    std::printf("--- Modul 1: GF(2^8), p(x)=0x169 ---\n");
     GaloisField gf(0x169);
     uint8_t a = 0x57, b = 0x83;
     uint8_t prod = gf.mul(a, b);
-    uint8_t inv = gf.inv(a);
-    uint8_t chk = gf.mul(a, inv);
+    uint8_t inv  = gf.inv(a);
+    uint8_t chk  = gf.mul(a, inv);
     std::printf("mul(0x%02X, 0x%02X) = 0x%02X\n", a, b, prod);
     std::printf("inv(0x%02X)         = 0x%02X\n", a, inv);
-    std::printf("a * inv            = 0x%02X (ожидается 0x01)\n", chk);
-    std::printf("S[0x00]=0x%02X S[0x01]=0x%02X (AES-построение)\n",
-        gf.sbox()[0x00], gf.sbox()[0x01]);
+    std::printf("a * inv            = 0x%02X\n", chk);
+    std::printf("S[0x00]=0x%02X S[0x01]=0x%02X\n",
+                gf.sbox()[0x00], gf.sbox()[0x01]);
     std::printf("\n");
 
-    
-    std::printf("--- Модуль 2: СТБ 34.101.31 (БелТ) ---\n");
+    std::printf("--- Modul 2: STB 34.101.31 (Belt) ---\n");
     uint8_t key[32];
     for (int i = 0; i < 32; ++i) key[i] = uint8_t(i);
     Belt belt(key);
@@ -376,35 +366,35 @@ int main() {
     printHex("Cipher   : ", ct, 16);
     printHex("Decipher : ", dt, 16);
     std::printf("Round-trip: %s\n\n",
-        std::memcmp(pt, dt, 16) == 0 ? "OK" : "FAILED");
+                std::memcmp(pt, dt, 16) == 0 ? "OK" : "FAILED");
 
-    
-    std::printf("--- Модуль 3: AEAD GCM + Constant-time ---\n");
+    std::printf("--- Modul 3: AEAD GCM + Constant-time ---\n");
     GCM<Belt> gcm(belt);
 
-    std::vector<uint8_t> aad = { 'A','A','D','-','d','a','t','a' };
-    std::vector<uint8_t> text = { 'H','e','l','l','o',' ','G','C','M','!' };
-    std::vector<uint8_t> iv(12, 0xAB);
+    uint8_t aad[8]   = {'A','A','D','-','d','a','t','a'};
+    uint8_t text[10] = {'H','e','l','l','o',' ','G','C','M','!'};
+    uint8_t iv[12];
+    std::memset(iv, 0xAB, 12);
 
-    std::vector<uint8_t> ct2;
+    uint8_t ct2[10];
     uint8_t tag[16];
-    gcm.seal(aad, text, iv, ct2, tag);
+    gcm.seal(aad, 8, text, 10, iv, 12, ct2, tag);
 
-    printHex("AAD      : ", aad.data(), aad.size());
-    printHex("Plain    : ", text.data(), text.size());
-    printHex("IV       : ", iv.data(), iv.size());
-    printHex("Cipher   : ", ct2.data(), ct2.size());
-    printHex("Tag      : ", tag, 16);
+    printHex("AAD      : ", aad,  8);
+    printHex("Plain    : ", text, 10);
+    printHex("IV       : ", iv,   12);
+    printHex("Cipher   : ", ct2,  10);
+    printHex("Tag      : ", tag,  16);
 
     uint8_t good[16], bad[16];
     std::memcpy(good, tag, 16);
-    std::memcpy(bad, tag, 16);
+    std::memcpy(bad,  tag, 16);
     bad[15] ^= 0x01;
 
     std::printf("verifyTagCT(tag, tag)      = %s\n",
-        GCM<Belt>::verifyTagCT(tag, good) ? "true" : "false");
+                GCM<Belt>::verifyTagCT(tag, good) ? "true" : "false");
     std::printf("verifyTagCT(tag, tag^bit)  = %s\n",
-        GCM<Belt>::verifyTagCT(tag, bad) ? "true" : "false");
+                GCM<Belt>::verifyTagCT(tag, bad)  ? "true" : "false");
 
     return 0;
 }
