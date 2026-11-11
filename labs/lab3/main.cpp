@@ -5,38 +5,52 @@
 
 class U256 {
 private:
-    uint64_t w[4];
+    uint64_t w0, w1, w2, w3;
 
 public:
     // Конструкторы
-    U256() { w[0] = w[1] = w[2] = w[3] = 0; }
-    U256(uint64_t v) { w[0] = v; w[1] = w[2] = w[3] = 0; }
+    U256() : w0(0), w1(0), w2(0), w3(0) {}
+    U256(uint64_t v) : w0(v), w1(0), w2(0), w3(0) {}
+    U256(uint64_t a, uint64_t b, uint64_t c, uint64_t d) : w0(a), w1(b), w2(c), w3(d) {}
 
-    // Доступ (для итераций по словам в CSWAP и сравнении)
-    uint64_t get_word(int i) const { return w[i]; }
-    void set_word(int i, uint64_t val) { w[i] = val; }
+    // Геттеры/сеттеры для совместимости с логикой (например, CSR на битах)
+    uint64_t get_word(int i) const {
+        if (i == 0) return w0;
+        if (i == 1) return w1;
+        if (i == 2) return w2;
+        return w3;
+    }
+    
+    void set_word(int i, uint64_t val) {
+        if (i == 0) w0 = val;
+        else if (i == 1) w1 = val;
+        else if (i == 2) w2 = val;
+        else w3 = val;
+    }
 
-    // Базовые проверки
     bool is_zero() const {
-        return (w[0] | w[1] | w[2] | w[3]) == 0;
+        return (w0 | w1 | w2 | w3) == 0;
     }
+    
     bool is_one() const {
-        return w[0] == 1 && w[1] == 0 && w[2] == 0 && w[3] == 0;
+        return w0 == 1 && w1 == 0 && w2 == 0 && w3 == 0;
     }
+
     int bitlen() const {
-        for (int i = 3; i >= 0; --i)
-            if (w[i]) {
-                int b = 0; uint64_t x = w[i];
-                while (x) { ++b; x >>= 1; }
-                return i * 64 + b;
-            }
+        if (w3) { int b=0; uint64_t x=w3; while(x){++b;x>>=1;} return 192+b; }
+        if (w2) { int b=0; uint64_t x=w2; while(x){++b;x>>=1;} return 128+b; }
+        if (w1) { int b=0; uint64_t x=w1; while(x){++b;x>>=1;} return 64+b; }
+        if (w0) { int b=0; uint64_t x=w0; while(x){++b;x>>=1;} return b; }
         return 0;
     }
+
     uint64_t get_bit(int bit) const {
-        return (w[bit >> 6] >> (bit & 63)) & 1ULL;
+        if (bit < 64) return (w0 >> bit) & 1ULL;
+        if (bit < 128) return (w1 >> (bit - 64)) & 1ULL;
+        if (bit < 192) return (w2 >> (bit - 128)) & 1ULL;
+        return (w3 >> (bit - 192)) & 1ULL;
     }
 
-    // Статические фабрики
     static U256 from_hex(const char* s) {
         U256 r;
         size_t n = strlen(s);
@@ -55,7 +69,7 @@ public:
                 acc |= v << (4 * cnt);
                 ++cnt; --i;
             }
-            r.w[word++] = acc;
+            r.set_word(word++, acc);
         }
         return r;
     }
@@ -63,44 +77,56 @@ public:
     void print(const char* label = nullptr) const {
         if (label) printf("%s = 0x", label);
         else printf("0x");
-        for (int i = 3; i >= 0; --i) printf("%016llx", (unsigned long long)w[i]);
-        printf("\n");
+        printf("%016llx%016llx%016llx%016llx\n", 
+            (unsigned long long)w3, (unsigned long long)w2, 
+            (unsigned long long)w1, (unsigned long long)w0);
     }
 
-    // Арифметические операторы
+    // Операторы
     friend U256 operator+(const U256& a, const U256& b) {
-        U256 r; uint64_t carry = 0;
-        for (int i = 0; i < 4; ++i) {
-            uint64_t s = a.w[i] + b.w[i];
-            uint64_t c1 = (s < a.w[i]) ? 1ULL : 0ULL;
-            uint64_t s2 = s + carry;
-            uint64_t c2 = (s2 < s) ? 1ULL : 0ULL;
-            r.w[i] = s2;
-            carry = c1 | c2;
-        }
+        U256 r;
+        uint64_t s0 = a.w0 + b.w0;
+        uint64_t c0 = (s0 < a.w0) ? 1ULL : 0ULL;
+        
+        uint64_t s1 = a.w1 + b.w1 + c0;
+        uint64_t c1 = (s1 < a.w1) ? 1ULL : ((c0 && s1 == a.w1) ? 1ULL : 0ULL);
+        
+        uint64_t s2 = a.w2 + b.w2 + c1;
+        uint64_t c2 = (s2 < a.w2) ? 1ULL : ((c1 && s2 == a.w2) ? 1ULL : 0ULL);
+        
+        uint64_t s3 = a.w3 + b.w3 + c2;
+        
+        r.w0 = s0; r.w1 = s1; r.w2 = s2; r.w3 = s3;
         return r;
     }
 
     friend U256 operator-(const U256& a, const U256& b) {
-        U256 r; uint64_t borrow = 0;
-        for (int i = 0; i < 4; ++i) {
-            uint64_t d = a.w[i] - b.w[i];
-            uint64_t b1 = (a.w[i] < b.w[i]) ? 1ULL : 0ULL;
-            uint64_t d2 = d - borrow;
-            uint64_t b2 = (d < borrow) ? 1ULL : 0ULL;
-            r.w[i] = d2;
-            borrow = b1 | b2;
-        }
+        U256 r;
+        uint64_t d0 = a.w0 - b.w0;
+        uint64_t b0 = (a.w0 < b.w0) ? 1ULL : 0ULL;
+
+        uint64_t d1 = a.w1 - b.w1 - b0;
+        uint64_t b1 = (a.w1 < b.w1) ? 1ULL : ((b0 && a.w1 == b.w1) ? 1ULL : 0ULL);
+
+        uint64_t d2 = a.w2 - b.w2 - b1;
+        uint64_t b2 = (a.w2 < b.w2) ? 1ULL : ((b1 && a.w2 == b.w2) ? 1ULL : 0ULL);
+
+        uint64_t d3 = a.w3 - b.w3 - b2;
+
+        r.w0 = d0; r.w1 = d1; r.w2 = d2; r.w3 = d3;
         return r;
     }
 
     friend U256 operator*(const U256& a, const U256& b) {
-        uint64_t res[8] = {0};
+        uint64_t res[8] = {0,0,0,0,0,0,0,0};
+        uint64_t a_arr[4] = {a.w0, a.w1, a.w2, a.w3};
+        uint64_t b_arr[4] = {b.w0, b.w1, b.w2, b.w3};
+        
         for (int i = 0; i < 4; ++i) {
             uint64_t carry = 0;
             for (int j = 0; j < 4; ++j) {
-                uint64_t a0 = a.w[i] & 0xFFFFFFFFULL, a1 = a.w[i] >> 32;
-                uint64_t b0 = b.w[j] & 0xFFFFFFFFULL, b1 = b.w[j] >> 32;
+                uint64_t a0 = a_arr[i] & 0xFFFFFFFFULL, a1 = a_arr[i] >> 32;
+                uint64_t b0 = b_arr[j] & 0xFFFFFFFFULL, b1 = b_arr[j] >> 32;
                 uint64_t p00 = a0 * b0;
                 uint64_t p01 = a0 * b1;
                 uint64_t p10 = a1 * b0;
@@ -121,72 +147,49 @@ public:
             }
             res[i+4] += carry;
         }
-        U256 r;
-        for (int i = 0; i < 4; ++i) r.w[i] = res[i];
-        return r;
+        return U256(res[0], res[1], res[2], res[3]);
     }
 
-    // Операторы сравнения
     friend bool operator==(const U256& a, const U256& b) {
-        return a.w[0] == b.w[0] && a.w[1] == b.w[1] && a.w[2] == b.w[2] && a.w[3] == b.w[3];
+        return a.w0 == b.w0 && a.w1 == b.w1 && a.w2 == b.w2 && a.w3 == b.w3;
     }
     friend bool operator!=(const U256& a, const U256& b) { return !(a == b); }
 
     friend bool operator<(const U256& a, const U256& b) {
-        for (int i = 3; i >= 0; --i) {
-            if (a.w[i] < b.w[i]) return true;
-            if (a.w[i] > b.w[i]) return false;
-        }
-        return false;
+        if (a.w3 != b.w3) return a.w3 < b.w3;
+        if (a.w2 != b.w2) return a.w2 < b.w2;
+        if (a.w1 != b.w1) return a.w1 < b.w1;
+        return a.w0 < b.w0;
     }
     friend bool operator<=(const U256& a, const U256& b) { return a < b || a == b; }
     friend bool operator>(const U256& a, const U256& b) { return b < a; }
     friend bool operator>=(const U256& a, const U256& b) { return !(a < b); }
 
-    // Constant-time побитовые операции для CSWAP
     friend U256 operator^(const U256& a, const U256& b) {
-        U256 r;
-        for (int i = 0; i < 4; ++i) r.w[i] = a.w[i] ^ b.w[i];
-        return r;
+        return U256(a.w0 ^ b.w0, a.w1 ^ b.w1, a.w2 ^ b.w2, a.w3 ^ b.w3);
     }
     friend U256 operator&(const U256& a, const U256& b) {
-        U256 r;
-        for (int i = 0; i < 4; ++i) r.w[i] = a.w[i] & b.w[i];
-        return r;
+        return U256(a.w0 & b.w0, a.w1 & b.w1, a.w2 & b.w2, a.w3 & b.w3);
     }
     friend U256 operator~(const U256& a) {
-        U256 r;
-        for (int i = 0; i < 4; ++i) r.w[i] = ~a.w[i];
-        return r;
+        return U256(~a.w0, ~a.w1, ~a.w2, ~a.w3);
     }
-
     U256& operator^=(const U256& other) {
-        for (int i = 0; i < 4; ++i) w[i] ^= other.w[i];
+        w0 ^= other.w0; w1 ^= other.w1; w2 ^= other.w2; w3 ^= other.w3;
         return *this;
     }
 };
 
 // ============================================================================
-// Модульная арифметика (глобальный модуль p)
+// Модульная арифметика
 // ============================================================================
 static U256 g_p;
 
 static U256 mod_reduce(U256 x) {
     for (int it = 0; it < 4; ++it) {
-        uint64_t borrow = 0;
-        U256 d;
-        for (int i = 0; i < 4; ++i) {
-            uint64_t d0 = x.get_word(i) - g_p.get_word(i) - borrow;
-            uint64_t b1 = (x.get_word(i) < g_p.get_word(i)) ? 1ULL : 0ULL;
-            uint64_t b2 = (x.get_word(i) - g_p.get_word(i) < borrow) ? 1ULL : 0ULL;
-            d.set_word(i, d0);
-            borrow = b1 | b2;
-        }
-        uint64_t mask = 0ULL - (borrow ^ 1ULL);
-        U256 mask_u(mask);
-        for (int i = 0; i < 4; ++i) {
-            x.set_word(i, (d.get_word(i) & mask) | (x.get_word(i) & ~mask));
-        }
+        U256 d = x - g_p;
+        bool ge = (x >= g_p);
+        if (ge) x = d;
     }
     return x;
 }
@@ -194,22 +197,16 @@ static U256 mod_reduce(U256 x) {
 static U256 mod_add(const U256& a, const U256& b) {
     U256 s = a + b;
     bool overflow = s < a;
-    U256 d = s - g_p;
-    bool ge = overflow || (d < s); // если overflow, то s >= p точно
-    if (ge) return d;
+    if (overflow || s >= g_p) return s - g_p;
     return s;
 }
 
 static U256 mod_sub(const U256& a, const U256& b) {
-    U256 d = a - b;
-    if (a < b) return d + g_p;
-    return d;
+    if (a < b) return (a - b) + g_p;
+    return a - b;
 }
 
 static U256 mod_mul(const U256& a, const U256& b) {
-    // Упрощение: чтобы не городить полную редукцию 512 бит в этом классе,
-    // используем double-and-add по битам b (a*b mod p = sum a * 2^i mod p)
-    // Это медленно, но корректно и полностью на перегруженных операторах.
     U256 res(0);
     U256 cur = mod_reduce(a);
     int n = b.bitlen();
@@ -232,23 +229,20 @@ static U256 mod_pow(const U256& a, const U256& e) {
 }
 
 static U256 mod_inv(const U256& a) {
-    U256 e = g_p - U256(2);
-    return mod_pow(a, e);
+    return mod_pow(a, g_p - U256(2));
 }
 
 // ============================================================================
-// Точка на эллиптической кривой (Якоби)
+// Эллиптическая кривая (Якоби)
 // ============================================================================
 struct Point {
     U256 X, Y, Z;
     Point() : X(0), Y(0), Z(0) {}
     Point(const U256& x, const U256& y, const U256& z) : X(x), Y(y), Z(z) {}
-    
     bool is_infinity() const { return Z.is_zero(); }
 };
 
-static U256 g_a;
-static U256 g_q;
+static U256 g_a, g_q;
 static Point g_G;
 
 static Point point_infinity() { return Point(U256(1), U256(1), U256(0)); }
@@ -257,16 +251,15 @@ static Point point_from_affine(const U256& x, const U256& y) { return Point(x, y
 static bool point_eq_ct(const Point& a, const Point& b) {
     U256 z2a = mod_mul(a.Z, a.Z), z2b = mod_mul(b.Z, b.Z);
     U256 z3a = mod_mul(z2a, a.Z), z3b = mod_mul(z2b, b.Z);
-    U256 lx = mod_mul(a.X, z2b);
-    U256 rx = mod_mul(b.X, z2a);
-    U256 ly = mod_mul(a.Y, z3b);
-    U256 ry = mod_mul(b.Y, z3a);
+    U256 lx = mod_mul(a.X, z2b), rx = mod_mul(b.X, z2a);
+    U256 ly = mod_mul(a.Y, z3b), ry = mod_mul(b.Y, z3a);
     
+    // Constant-time XOR-аккумулятор без get_word
     uint64_t acc = 0;
-    for (int i = 0; i < 4; ++i) acc |= (lx.get_word(i) ^ rx.get_word(i));
-    for (int i = 0; i < 4; ++i) acc |= (ly.get_word(i) ^ ry.get_word(i));
-    bool xy_eq = (acc == 0);
+    acc |= (lx ^ rx).get_word(0) | (lx ^ rx).get_word(1) | (lx ^ rx).get_word(2) | (lx ^ rx).get_word(3);
+    acc |= (ly ^ ry).get_word(0) | (ly ^ ry).get_word(1) | (ly ^ ry).get_word(2) | (ly ^ ry).get_word(3);
     
+    bool xy_eq = (acc == 0);
     bool a_inf = a.Z.is_zero(), b_inf = b.Z.is_zero();
     uint64_t same_inf = (uint64_t)(a_inf == b_inf);
     uint64_t both_inf  = (uint64_t)(a_inf & b_inf);
@@ -322,13 +315,9 @@ static void to_affine(const Point& P, U256& x, U256& y) {
 
 static void cswap_point(Point& a, Point& b, uint64_t bit) {
     U256 mask(0ULL - bit);
-    
-    U256 t = (a.X ^ b.X) & mask;
-    a.X ^= t; b.X ^= t;
-    t = (a.Y ^ b.Y) & mask;
-    a.Y ^= t; b.Y ^= t;
-    t = (a.Z ^ b.Z) & mask;
-    a.Z ^= t; b.Z ^= t;
+    U256 t = (a.X ^ b.X) & mask; a.X ^= t; b.X ^= t;
+    t = (a.Y ^ b.Y) & mask; a.Y ^= t; b.Y ^= t;
+    t = (a.Z ^ b.Z) & mask; a.Z ^= t; b.Z ^= t;
 }
 
 static Point scalar_mul_ct(const U256& k, const Point& P) {
@@ -371,7 +360,10 @@ static uint64_t xorshift64() {
 
 static U256 random_scalar_mod_q() {
     U256 r;
-    for (int i = 0; i < 4; ++i) r.set_word(i, xorshift64());
+    r.set_word(0, xorshift64());
+    r.set_word(1, xorshift64());
+    r.set_word(2, xorshift64());
+    r.set_word(3, xorshift64());
     r = mod_q(r);
     if (r.is_zero()) r = U256(1);
     return r;
@@ -448,10 +440,7 @@ int main() {
 
     U256 gx, gy; to_affine(g_G, gx, gy);
     printf("== Параметры кривой ==\n");
-    g_p.print("p");
-    g_q.print("q");
-    gx.print("Gx");
-    gy.print("Gy");
+    g_p.print("p"); g_q.print("q"); gx.print("Gx"); gy.print("Gy");
     printf("G on curve: %s\n\n", point_on_curve(gx, gy) ? "yes" : "no");
 
     printf("== Constant-time сравнение точек ==\n");
